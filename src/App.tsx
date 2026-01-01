@@ -6,6 +6,8 @@ import { AuthProvider } from "@/contexts/AuthContext";
 import { BabyProvider } from "@/contexts/BabyContext";
 import Index from "@/pages/Index";
 import Auth from "@/pages/Auth";
+import Feed from "@/pages/Feed";
+import Poop from "@/pages/Poop";
 import History from "@/pages/History";
 import Gallery from "@/pages/Gallery";
 import Insights from "@/pages/Insights";
@@ -24,6 +26,8 @@ const App = () => (
           <Routes>
             <Route path="/" element={<Index />} />
             <Route path="/auth" element={<Auth />} />
+            <Route path="/feed" element={<Feed />} />
+            <Route path="/poop" element={<Poop />} />
             <Route path="/history" element={<History />} />
             <Route path="/gallery" element={<Gallery />} />
             <Route path="/insights" element={<Insights />} />
