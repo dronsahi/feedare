@@ -44,6 +44,8 @@ export default function Gallery() {
   const [previewUrl, setPreviewUrl] = useState<string | null>(null);
   const [isVideoFile, setIsVideoFile] = useState(false);
   const fileInputRef = useRef<HTMLInputElement>(null);
+  const cameraInputRef = useRef<HTMLInputElement>(null);
+  const videoInputRef = useRef<HTMLInputElement>(null);
 
   useEffect(() => {
     if (selectedBaby) {
@@ -257,10 +259,27 @@ export default function Gallery() {
           </DialogHeader>
 
           <div className="space-y-4 py-4">
+            {/* Hidden file inputs */}
             <input
               ref={fileInputRef}
               type="file"
               accept="image/*,video/*"
+              onChange={handleFileSelect}
+              className="hidden"
+            />
+            <input
+              ref={cameraInputRef}
+              type="file"
+              accept="image/*"
+              capture="environment"
+              onChange={handleFileSelect}
+              className="hidden"
+            />
+            <input
+              ref={videoInputRef}
+              type="file"
+              accept="video/*"
+              capture="environment"
               onChange={handleFileSelect}
               className="hidden"
             />
@@ -292,17 +311,35 @@ export default function Gallery() {
                 </button>
               </div>
             ) : (
-              <button
-                onClick={() => fileInputRef.current?.click()}
-                className="w-full aspect-square border-2 border-dashed border-border rounded-lg flex flex-col items-center justify-center gap-2 hover:border-coral/50 transition-colors"
-              >
-                <div className="flex gap-2">
-                  <Camera className="w-10 h-10 text-muted-foreground" />
-                  <Video className="w-10 h-10 text-muted-foreground" />
+              <div className="space-y-3">
+                {/* Camera capture options */}
+                <div className="grid grid-cols-2 gap-3">
+                  <button
+                    onClick={() => cameraInputRef.current?.click()}
+                    className="flex flex-col items-center justify-center gap-2 p-4 border-2 border-dashed border-border rounded-lg hover:border-coral/50 hover:bg-coral/5 transition-colors"
+                  >
+                    <Camera className="w-8 h-8 text-coral" />
+                    <span className="text-sm font-medium">Take Photo</span>
+                  </button>
+                  <button
+                    onClick={() => videoInputRef.current?.click()}
+                    className="flex flex-col items-center justify-center gap-2 p-4 border-2 border-dashed border-border rounded-lg hover:border-coral/50 hover:bg-coral/5 transition-colors"
+                  >
+                    <Video className="w-8 h-8 text-coral" />
+                    <span className="text-sm font-medium">Record Video</span>
+                  </button>
                 </div>
-                <span className="text-muted-foreground">Tap to select photo or video</span>
-                <span className="text-xs text-muted-foreground">Photos: 5MB max • Videos: 50MB max</span>
-              </button>
+                
+                {/* Gallery picker */}
+                <button
+                  onClick={() => fileInputRef.current?.click()}
+                  className="w-full flex items-center justify-center gap-3 p-4 border-2 border-dashed border-border rounded-lg hover:border-coral/50 hover:bg-coral/5 transition-colors"
+                >
+                  <Image className="w-6 h-6 text-muted-foreground" />
+                  <span className="text-sm font-medium">Choose from Gallery</span>
+                </button>
+                <p className="text-xs text-center text-muted-foreground">Photos: 5MB max • Videos: 50MB max</p>
+              </div>
             )}
 
             <div className="space-y-2">
