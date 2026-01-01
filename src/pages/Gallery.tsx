@@ -10,7 +10,7 @@ import { Input } from '@/components/ui/input';
 import { Label } from '@/components/ui/label';
 import { supabase } from '@/integrations/supabase/client';
 import { formatDate } from '@/lib/utils';
-import { Camera, Plus, X, Image, Trash2 } from 'lucide-react';
+import { Camera, Plus, X, Image, Trash2, Video, Play } from 'lucide-react';
 import { toast } from 'sonner';
 import {
   Dialog,
@@ -21,35 +21,37 @@ import {
   DialogFooter,
 } from '@/components/ui/dialog';
 
-interface Photo {
+interface Media {
   id: string;
   storage_path: string;
   caption: string | null;
   taken_at: string;
   photo_type: string;
   url?: string;
+  isVideo?: boolean;
 }
 
 export default function Gallery() {
   const { user, loading: authLoading } = useAuth();
   const { selectedBaby, loading: babyLoading } = useBaby();
-  const [photos, setPhotos] = useState<Photo[]>([]);
+  const [media, setMedia] = useState<Media[]>([]);
   const [loading, setLoading] = useState(true);
   const [uploading, setUploading] = useState(false);
   const [uploadDialogOpen, setUploadDialogOpen] = useState(false);
-  const [selectedPhoto, setSelectedPhoto] = useState<Photo | null>(null);
+  const [selectedMedia, setSelectedMedia] = useState<Media | null>(null);
   const [caption, setCaption] = useState('');
   const [selectedFile, setSelectedFile] = useState<File | null>(null);
   const [previewUrl, setPreviewUrl] = useState<string | null>(null);
+  const [isVideoFile, setIsVideoFile] = useState(false);
   const fileInputRef = useRef<HTMLInputElement>(null);
 
   useEffect(() => {
     if (selectedBaby) {
-      fetchPhotos();
+      fetchMedia();
     }
   }, [selectedBaby]);
 
-  const fetchPhotos = async () => {
+  const fetchMedia = async () => {
     if (!selectedBaby) return;
     setLoading(true);
 
@@ -62,19 +64,21 @@ export default function Gallery() {
 
       if (error) throw error;
 
-      // Get signed URLs for each photo
-      const photosWithUrls = await Promise.all(
-        (data || []).map(async (photo) => {
+      // Get signed URLs for each media item
+      const mediaWithUrls = await Promise.all(
+        (data || []).map(async (item) => {
           const { data: urlData } = await supabase.storage
             .from('baby-photos')
-            .createSignedUrl(photo.storage_path, 3600);
-          return { ...photo, url: urlData?.signedUrl };
+            .createSignedUrl(item.storage_path, 3600);
+          const isVideo = item.photo_type === 'video' || 
+            item.storage_path.match(/\.(mp4|mov|webm|avi)$/i);
+          return { ...item, url: urlData?.signedUrl, isVideo };
         })
       );
 
-      setPhotos(photosWithUrls);
+      setMedia(mediaWithUrls);
     } catch (error) {
-      console.error('Error fetching photos:', error);
+      console.error('Error fetching media:', error);
     } finally {
       setLoading(false);
     }
@@ -83,11 +87,16 @@ export default function Gallery() {
   const handleFileSelect = (e: React.ChangeEvent<HTMLInputElement>) => {
     const file = e.target.files?.[0];
     if (file) {
-      if (file.size > 5 * 1024 * 1024) {
-        toast.error('File size must be less than 5MB');
+      const isVideo = file.type.startsWith('video/');
+      const maxSize = isVideo ? 50 * 1024 * 1024 : 5 * 1024 * 1024; // 50MB for videos, 5MB for images
+      
+      if (file.size > maxSize) {
+        toast.error(`File size must be less than ${isVideo ? '50MB' : '5MB'}`);
         return;
       }
+      
       setSelectedFile(file);
+      setIsVideoFile(isVideo);
       setPreviewUrl(URL.createObjectURL(file));
     }
   };
@@ -112,41 +121,42 @@ export default function Gallery() {
         baby_id: selectedBaby.id,
         storage_path: fileName,
         caption: caption || null,
-        photo_type: 'baby',
+        photo_type: isVideoFile ? 'video' : 'baby',
         taken_at: new Date().toISOString(),
       });
 
       if (dbError) throw dbError;
 
-      toast.success('Photo uploaded successfully!');
+      toast.success(`${isVideoFile ? 'Video' : 'Photo'} uploaded successfully!`);
       setUploadDialogOpen(false);
       setSelectedFile(null);
       setPreviewUrl(null);
       setCaption('');
-      fetchPhotos();
+      setIsVideoFile(false);
+      fetchMedia();
     } catch (error: any) {
       console.error('Upload error:', error);
-      toast.error(error.message || 'Failed to upload photo');
+      toast.error(error.message || 'Failed to upload');
     } finally {
       setUploading(false);
     }
   };
 
-  const handleDelete = async (photo: Photo) => {
+  const handleDelete = async (item: Media) => {
     try {
       // Delete from storage
-      await supabase.storage.from('baby-photos').remove([photo.storage_path]);
+      await supabase.storage.from('baby-photos').remove([item.storage_path]);
 
       // Delete from database
-      const { error } = await supabase.from('photos').delete().eq('id', photo.id);
+      const { error } = await supabase.from('photos').delete().eq('id', item.id);
 
       if (error) throw error;
 
-      toast.success('Photo deleted');
-      setSelectedPhoto(null);
-      fetchPhotos();
+      toast.success(`${item.isVideo ? 'Video' : 'Photo'} deleted`);
+      setSelectedMedia(null);
+      fetchMedia();
     } catch (error) {
-      toast.error('Failed to delete photo');
+      toast.error('Failed to delete');
     }
   };
 
@@ -166,7 +176,7 @@ export default function Gallery() {
       <main className="p-4 max-w-lg mx-auto space-y-4">
         <div className="flex justify-between items-center">
           <div>
-            <h1 className="text-2xl font-bold text-foreground">Photos</h1>
+            <h1 className="text-2xl font-bold text-foreground">Photos & Videos</h1>
             <p className="text-muted-foreground">{selectedBaby?.name}'s memories</p>
           </div>
           <Button
@@ -174,18 +184,18 @@ export default function Gallery() {
             className="bg-coral hover:bg-coral/90"
           >
             <Plus className="w-4 h-4 mr-1" />
-            Add Photo
+            Add
           </Button>
         </div>
 
         {loading ? (
           <div className="text-center py-12">
-            <p className="text-muted-foreground">Loading photos...</p>
+            <p className="text-muted-foreground">Loading...</p>
           </div>
-        ) : photos.length === 0 ? (
+        ) : media.length === 0 ? (
           <Card className="p-8 text-center">
             <Camera className="w-16 h-16 mx-auto text-muted-foreground mb-4" />
-            <h3 className="font-semibold mb-2">No photos yet</h3>
+            <h3 className="font-semibold mb-2">No photos or videos yet</h3>
             <p className="text-muted-foreground mb-4">
               Capture precious moments of {selectedBaby?.name}
             </p>
@@ -194,21 +204,32 @@ export default function Gallery() {
               className="bg-coral hover:bg-coral/90"
             >
               <Camera className="w-4 h-4 mr-2" />
-              Upload First Photo
+              Upload First Memory
             </Button>
           </Card>
         ) : (
           <div className="grid grid-cols-3 gap-2">
-            {photos.map((photo) => (
+            {media.map((item) => (
               <button
-                key={photo.id}
-                onClick={() => setSelectedPhoto(photo)}
-                className="aspect-square rounded-lg overflow-hidden bg-muted"
+                key={item.id}
+                onClick={() => setSelectedMedia(item)}
+                className="aspect-square rounded-lg overflow-hidden bg-muted relative"
               >
-                {photo.url ? (
+                {item.isVideo ? (
+                  <>
+                    <video
+                      src={item.url}
+                      className="w-full h-full object-cover"
+                      muted
+                    />
+                    <div className="absolute inset-0 flex items-center justify-center bg-black/30">
+                      <Play className="w-8 h-8 text-white" fill="white" />
+                    </div>
+                  </>
+                ) : item.url ? (
                   <img
-                    src={photo.url}
-                    alt={photo.caption || 'Baby photo'}
+                    src={item.url}
+                    alt={item.caption || 'Baby photo'}
                     className="w-full h-full object-cover"
                   />
                 ) : (
@@ -229,9 +250,9 @@ export default function Gallery() {
       <Dialog open={uploadDialogOpen} onOpenChange={setUploadDialogOpen}>
         <DialogContent className="max-w-sm">
           <DialogHeader>
-            <DialogTitle>Add Photo</DialogTitle>
+            <DialogTitle>Add Photo or Video</DialogTitle>
             <DialogDescription>
-              Upload a photo of {selectedBaby?.name}
+              Upload a memory of {selectedBaby?.name}
             </DialogDescription>
           </DialogHeader>
 
@@ -239,22 +260,31 @@ export default function Gallery() {
             <input
               ref={fileInputRef}
               type="file"
-              accept="image/*"
+              accept="image/*,video/*"
               onChange={handleFileSelect}
               className="hidden"
             />
 
             {previewUrl ? (
               <div className="relative">
-                <img
-                  src={previewUrl}
-                  alt="Preview"
-                  className="w-full aspect-square object-cover rounded-lg"
-                />
+                {isVideoFile ? (
+                  <video
+                    src={previewUrl}
+                    className="w-full aspect-square object-cover rounded-lg"
+                    controls
+                  />
+                ) : (
+                  <img
+                    src={previewUrl}
+                    alt="Preview"
+                    className="w-full aspect-square object-cover rounded-lg"
+                  />
+                )}
                 <button
                   onClick={() => {
                     setSelectedFile(null);
                     setPreviewUrl(null);
+                    setIsVideoFile(false);
                   }}
                   className="absolute top-2 right-2 p-1 bg-black/50 rounded-full text-white"
                 >
@@ -266,8 +296,12 @@ export default function Gallery() {
                 onClick={() => fileInputRef.current?.click()}
                 className="w-full aspect-square border-2 border-dashed border-border rounded-lg flex flex-col items-center justify-center gap-2 hover:border-coral/50 transition-colors"
               >
-                <Camera className="w-12 h-12 text-muted-foreground" />
-                <span className="text-muted-foreground">Tap to select photo</span>
+                <div className="flex gap-2">
+                  <Camera className="w-10 h-10 text-muted-foreground" />
+                  <Video className="w-10 h-10 text-muted-foreground" />
+                </div>
+                <span className="text-muted-foreground">Tap to select photo or video</span>
+                <span className="text-xs text-muted-foreground">Photos: 5MB max • Videos: 50MB max</span>
               </button>
             )}
 
@@ -296,33 +330,40 @@ export default function Gallery() {
         </DialogContent>
       </Dialog>
 
-      {/* Photo View Dialog */}
-      <Dialog open={!!selectedPhoto} onOpenChange={() => setSelectedPhoto(null)}>
+      {/* Media View Dialog */}
+      <Dialog open={!!selectedMedia} onOpenChange={() => setSelectedMedia(null)}>
         <DialogContent className="max-w-lg p-0 overflow-hidden">
-          {selectedPhoto && (
+          {selectedMedia && (
             <>
-              {selectedPhoto.url && (
+              {selectedMedia.isVideo ? (
+                <video
+                  src={selectedMedia.url}
+                  className="w-full max-h-[60vh] bg-black"
+                  controls
+                  autoPlay
+                />
+              ) : selectedMedia.url && (
                 <img
-                  src={selectedPhoto.url}
-                  alt={selectedPhoto.caption || 'Baby photo'}
+                  src={selectedMedia.url}
+                  alt={selectedMedia.caption || 'Baby photo'}
                   className="w-full max-h-[60vh] object-contain bg-black"
                 />
               )}
               <div className="p-4 space-y-2">
-                {selectedPhoto.caption && (
-                  <p className="font-medium">{selectedPhoto.caption}</p>
+                {selectedMedia.caption && (
+                  <p className="font-medium">{selectedMedia.caption}</p>
                 )}
                 <p className="text-sm text-muted-foreground">
-                  {formatDate(selectedPhoto.taken_at)}
+                  {formatDate(selectedMedia.taken_at)}
                 </p>
                 <Button
                   variant="destructive"
                   size="sm"
-                  onClick={() => handleDelete(selectedPhoto)}
+                  onClick={() => handleDelete(selectedMedia)}
                   className="mt-2"
                 >
                   <Trash2 className="w-4 h-4 mr-1" />
-                  Delete Photo
+                  Delete
                 </Button>
               </div>
             </>
