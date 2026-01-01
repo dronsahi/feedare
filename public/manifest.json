@@ -1,4 +1,5 @@
 {
+  "id": "/",
   "name": "Feedare",
   "short_name": "Feedare",
   "description": "Track your baby's feeding, poop patterns, measurements, and photos",
@@ -9,6 +10,7 @@
   "lang": "en",
   "scope": "/",
   "orientation": "portrait",
+  "categories": ["health", "lifestyle", "utilities"],
   "icons": [
     {
       "src": "/icon-48.png",
