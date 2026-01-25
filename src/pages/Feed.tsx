@@ -10,6 +10,7 @@ import { Input } from '@/components/ui/input';
 import { Label } from '@/components/ui/label';
 import { supabase } from '@/integrations/supabase/client';
 import { calculateAge, formatDateTime } from '@/lib/utils';
+import { calculateWHOFeedTarget, getFeedStatus } from '@/lib/feedCalculations';
 import { toast } from 'sonner';
 
 const feedTypes = ['Breastmilk', 'Formula', 'Mixed'];
@@ -83,9 +84,11 @@ export default function Feed() {
   }
 
   const age = selectedBaby ? calculateAge(selectedBaby.date_of_birth) : null;
-  const targetFeed = 750;
-  const feedPercentage = Math.round((todayFeedAmount / targetFeed) * 100);
-  const isBelowTarget = feedPercentage < 100;
+  const ageInDays = age?.days ?? 0;
+  const feedTarget = calculateWHOFeedTarget(ageInDays);
+  const feedPercentage = Math.round((todayFeedAmount / feedTarget.targetMl) * 100);
+  const feedStatus = getFeedStatus(todayFeedAmount, feedTarget);
+  const isBelowTarget = feedStatus.status === 'low';
 
   return (
     <div className="min-h-screen bg-background pb-36">
@@ -98,22 +101,43 @@ export default function Feed() {
           <p className="text-muted-foreground">{selectedBaby?.name}'s daily feeding log</p>
         </div>
 
-        {/* Feeding Target Card */}
-        <Card className={`p-4 ${isBelowTarget ? 'bg-amber-50 border-amber-200' : 'bg-green-50 border-green-200'}`}>
+        {/* Feeding Target Card - WHO Based */}
+        <Card className={`p-4 ${
+          feedStatus.color === 'red' ? 'bg-red-50 border-red-200' :
+          feedStatus.color === 'amber' ? 'bg-amber-50 border-amber-200' : 
+          'bg-green-50 border-green-200'
+        }`}>
           <div className="flex justify-between items-start">
             <div>
-              <h3 className={`text-xl font-bold ${isBelowTarget ? 'text-amber-600' : 'text-green-600'}`}>
-                {isBelowTarget ? 'Below Target' : 'On Target'}
+              <h3 className={`text-xl font-bold ${
+                feedStatus.color === 'red' ? 'text-red-600' :
+                feedStatus.color === 'amber' ? 'text-amber-600' : 
+                'text-green-600'
+              }`}>
+                {feedStatus.status === 'low' ? 'Below Target' : 
+                 feedStatus.status === 'high' ? 'Above Target' : 'On Target'}
               </h3>
               <p className="text-sm text-muted-foreground">
-                {isBelowTarget ? 'Feeding is below recommended' : 'Feeding is on track'}
+                {feedTarget.description}
               </p>
-              <div className="flex gap-4 mt-2">
-                <span className="text-sm">Today: <span className={isBelowTarget ? 'text-amber-600 font-semibold' : 'text-green-600 font-semibold'}>{todayFeedAmount}ml</span></span>
-                <span className="text-sm text-muted-foreground">Target: {targetFeed}ml</span>
+              <div className="flex flex-col gap-1 mt-2">
+                <span className="text-sm">
+                  Today: <span className={`font-semibold ${
+                    feedStatus.color === 'red' ? 'text-red-600' :
+                    feedStatus.color === 'amber' ? 'text-amber-600' : 
+                    'text-green-600'
+                  }`}>{todayFeedAmount}ml</span>
+                </span>
+                <span className="text-xs text-muted-foreground">
+                  WHO Target: {feedTarget.minMl}-{feedTarget.maxMl}ml (ideal: {feedTarget.targetMl}ml)
+                </span>
               </div>
             </div>
-            <span className={`text-4xl font-bold ${isBelowTarget ? 'text-amber-500' : 'text-green-500'}`}>
+            <span className={`text-4xl font-bold ${
+              feedStatus.color === 'red' ? 'text-red-500' :
+              feedStatus.color === 'amber' ? 'text-amber-500' : 
+              'text-green-500'
+            }`}>
               {feedPercentage}%
             </span>
           </div>
