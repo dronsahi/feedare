@@ -7,8 +7,8 @@ import { AdBanner } from '@/components/AdBanner';
 import { Card } from '@/components/ui/card';
 import { Button } from '@/components/ui/button';
 import { Label } from '@/components/ui/label';
+import { DateTimePicker } from '@/components/DateTimePicker';
 import { supabase } from '@/integrations/supabase/client';
-import { formatDateTime } from '@/lib/utils';
 import { toast } from 'sonner';
 
 const colors = [
@@ -111,9 +111,7 @@ export default function Poop() {
           
           <div className="space-y-2">
             <Label>Date & Time</Label>
-            <div className="p-3 rounded-lg border border-input bg-background">
-              {formatDateTime(dateTime)}
-            </div>
+            <DateTimePicker value={dateTime} onChange={setDateTime} />
           </div>
 
           <div className="space-y-2">
