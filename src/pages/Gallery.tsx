@@ -40,9 +40,8 @@ export default function Gallery() {
   const [uploadDialogOpen, setUploadDialogOpen] = useState(false);
   const [selectedMedia, setSelectedMedia] = useState<Media | null>(null);
   const [caption, setCaption] = useState('');
-  const [selectedFile, setSelectedFile] = useState<File | null>(null);
-  const [previewUrl, setPreviewUrl] = useState<string | null>(null);
-  const [isVideoFile, setIsVideoFile] = useState(false);
+  const [selectedFiles, setSelectedFiles] = useState<File[]>([]);
+  const [previewUrls, setPreviewUrls] = useState<string[]>([]);
   const fileInputRef = useRef<HTMLInputElement>(null);
   const cameraInputRef = useRef<HTMLInputElement>(null);
   const videoInputRef = useRef<HTMLInputElement>(null);
@@ -87,54 +86,84 @@ export default function Gallery() {
   };
 
   const handleFileSelect = (e: React.ChangeEvent<HTMLInputElement>) => {
-    const file = e.target.files?.[0];
-    if (file) {
+    const files = Array.from(e.target.files || []);
+    if (files.length === 0) return;
+
+    const validFiles: File[] = [];
+    const newPreviewUrls: string[] = [];
+
+    for (const file of files) {
       const isVideo = file.type.startsWith('video/');
-      const maxSize = isVideo ? 50 * 1024 * 1024 : 5 * 1024 * 1024; // 50MB for videos, 5MB for images
+      const maxSize = isVideo ? 50 * 1024 * 1024 : 5 * 1024 * 1024;
       
       if (file.size > maxSize) {
-        toast.error(`File size must be less than ${isVideo ? '50MB' : '5MB'}`);
-        return;
+        toast.error(`${file.name} exceeds ${isVideo ? '50MB' : '5MB'} limit`);
+        continue;
       }
       
-      setSelectedFile(file);
-      setIsVideoFile(isVideo);
-      setPreviewUrl(URL.createObjectURL(file));
+      validFiles.push(file);
+      newPreviewUrls.push(URL.createObjectURL(file));
+    }
+
+    if (validFiles.length > 0) {
+      setSelectedFiles(prev => [...prev, ...validFiles]);
+      setPreviewUrls(prev => [...prev, ...newPreviewUrls]);
     }
   };
 
   const handleUpload = async () => {
-    if (!selectedBaby || !selectedFile || !user) return;
+    if (!selectedBaby || selectedFiles.length === 0 || !user) return;
 
     setUploading(true);
+    let successCount = 0;
+    let failCount = 0;
+
     try {
-      const fileExt = selectedFile.name.split('.').pop();
-      const fileName = `${user.id}/${selectedBaby.id}/${Date.now()}.${fileExt}`;
+      for (const file of selectedFiles) {
+        const isVideo = file.type.startsWith('video/');
+        const fileExt = file.name.split('.').pop();
+        const fileName = `${user.id}/${selectedBaby.id}/${Date.now()}-${Math.random().toString(36).substr(2, 9)}.${fileExt}`;
 
-      // Upload to storage
-      const { error: uploadError } = await supabase.storage
-        .from('baby-photos')
-        .upload(fileName, selectedFile);
+        // Upload to storage
+        const { error: uploadError } = await supabase.storage
+          .from('baby-photos')
+          .upload(fileName, file);
 
-      if (uploadError) throw uploadError;
+        if (uploadError) {
+          console.error('Upload error:', uploadError);
+          failCount++;
+          continue;
+        }
 
-      // Save to database
-      const { error: dbError } = await supabase.from('photos').insert({
-        baby_id: selectedBaby.id,
-        storage_path: fileName,
-        caption: caption || null,
-        photo_type: isVideoFile ? 'video' : 'baby',
-        taken_at: new Date().toISOString(),
-      });
+        // Save to database
+        const { error: dbError } = await supabase.from('photos').insert({
+          baby_id: selectedBaby.id,
+          storage_path: fileName,
+          caption: caption || null,
+          photo_type: isVideo ? 'video' : 'baby',
+          taken_at: new Date().toISOString(),
+        });
 
-      if (dbError) throw dbError;
+        if (dbError) {
+          console.error('DB error:', dbError);
+          failCount++;
+          continue;
+        }
 
-      toast.success(`${isVideoFile ? 'Video' : 'Photo'} uploaded successfully!`);
+        successCount++;
+      }
+
+      if (successCount > 0) {
+        toast.success(`${successCount} file${successCount > 1 ? 's' : ''} uploaded successfully!`);
+      }
+      if (failCount > 0) {
+        toast.error(`${failCount} file${failCount > 1 ? 's' : ''} failed to upload`);
+      }
+
       setUploadDialogOpen(false);
-      setSelectedFile(null);
-      setPreviewUrl(null);
+      setSelectedFiles([]);
+      setPreviewUrls([]);
       setCaption('');
-      setIsVideoFile(false);
       fetchMedia();
     } catch (error: any) {
       console.error('Upload error:', error);
@@ -142,6 +171,11 @@ export default function Gallery() {
     } finally {
       setUploading(false);
     }
+  };
+
+  const removeSelectedFile = (index: number) => {
+    setSelectedFiles(prev => prev.filter((_, i) => i !== index));
+    setPreviewUrls(prev => prev.filter((_, i) => i !== index));
   };
 
   const handleDelete = async (item: Media) => {
@@ -264,6 +298,7 @@ export default function Gallery() {
               ref={fileInputRef}
               type="file"
               accept="image/*,video/*"
+              multiple
               onChange={handleFileSelect}
               className="hidden"
             />
@@ -284,30 +319,51 @@ export default function Gallery() {
               className="hidden"
             />
 
-            {previewUrl ? (
-              <div className="relative">
-                {isVideoFile ? (
-                  <video
-                    src={previewUrl}
-                    className="w-full aspect-square object-cover rounded-lg"
-                    controls
-                  />
-                ) : (
-                  <img
-                    src={previewUrl}
-                    alt="Preview"
-                    className="w-full aspect-square object-cover rounded-lg"
-                  />
-                )}
+            {previewUrls.length > 0 ? (
+              <div className="space-y-3">
+                <div className="grid grid-cols-3 gap-2 max-h-48 overflow-y-auto">
+                  {previewUrls.map((url, index) => {
+                    const file = selectedFiles[index];
+                    const isVideo = file?.type.startsWith('video/');
+                    return (
+                      <div key={index} className="relative aspect-square">
+                        {isVideo ? (
+                          <video
+                            src={url}
+                            className="w-full h-full object-cover rounded-lg"
+                            muted
+                          />
+                        ) : (
+                          <img
+                            src={url}
+                            alt="Preview"
+                            className="w-full h-full object-cover rounded-lg"
+                          />
+                        )}
+                        <button
+                          onClick={() => removeSelectedFile(index)}
+                          className="absolute top-1 right-1 p-1 bg-black/50 rounded-full text-white"
+                        >
+                          <X className="w-3 h-3" />
+                        </button>
+                        {isVideo && (
+                          <div className="absolute inset-0 flex items-center justify-center pointer-events-none">
+                            <Play className="w-6 h-6 text-white" fill="white" />
+                          </div>
+                        )}
+                      </div>
+                    );
+                  })}
+                </div>
+                <p className="text-sm text-center text-muted-foreground">
+                  {selectedFiles.length} file{selectedFiles.length > 1 ? 's' : ''} selected
+                </p>
                 <button
-                  onClick={() => {
-                    setSelectedFile(null);
-                    setPreviewUrl(null);
-                    setIsVideoFile(false);
-                  }}
-                  className="absolute top-2 right-2 p-1 bg-black/50 rounded-full text-white"
+                  onClick={() => fileInputRef.current?.click()}
+                  className="w-full flex items-center justify-center gap-2 p-2 border border-dashed border-border rounded-lg hover:border-coral/50 text-sm"
                 >
-                  <X className="w-4 h-4" />
+                  <Plus className="w-4 h-4" />
+                  Add more
                 </button>
               </div>
             ) : (
@@ -338,7 +394,7 @@ export default function Gallery() {
                   <Image className="w-6 h-6 text-muted-foreground" />
                   <span className="text-sm font-medium">Choose from Gallery</span>
                 </button>
-                <p className="text-xs text-center text-muted-foreground">Photos: 5MB max • Videos: 50MB max</p>
+                <p className="text-xs text-center text-muted-foreground">Photos: 5MB max • Videos: 50MB max • Select multiple</p>
               </div>
             )}
 
@@ -358,10 +414,10 @@ export default function Gallery() {
             </Button>
             <Button
               onClick={handleUpload}
-              disabled={!selectedFile || uploading}
+              disabled={selectedFiles.length === 0 || uploading}
               className="bg-coral hover:bg-coral/90"
             >
-              {uploading ? 'Uploading...' : 'Upload'}
+              {uploading ? 'Uploading...' : `Upload ${selectedFiles.length > 1 ? `(${selectedFiles.length})` : ''}`}
             </Button>
           </DialogFooter>
         </DialogContent>
