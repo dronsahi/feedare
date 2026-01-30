@@ -10,7 +10,7 @@ import { Input } from '@/components/ui/input';
 import { Label } from '@/components/ui/label';
 import { supabase } from '@/integrations/supabase/client';
 import { formatDate } from '@/lib/utils';
-import { Camera, Plus, X, Image, Trash2, Video, Play } from 'lucide-react';
+import { Camera, Plus, X, Image, Trash2, Video, Play, Check, Loader2, AlertCircle } from 'lucide-react';
 import { toast } from 'sonner';
 import {
   Dialog,
@@ -42,6 +42,7 @@ export default function Gallery() {
   const [caption, setCaption] = useState('');
   const [selectedFiles, setSelectedFiles] = useState<File[]>([]);
   const [previewUrls, setPreviewUrls] = useState<string[]>([]);
+  const [uploadProgress, setUploadProgress] = useState<{ current: number; total: number; statuses: ('pending' | 'uploading' | 'done' | 'failed')[] }>({ current: 0, total: 0, statuses: [] });
   const fileInputRef = useRef<HTMLInputElement>(null);
   const cameraInputRef = useRef<HTMLInputElement>(null);
   const videoInputRef = useRef<HTMLInputElement>(null);
@@ -115,11 +116,21 @@ export default function Gallery() {
     if (!selectedBaby || selectedFiles.length === 0 || !user) return;
 
     setUploading(true);
+    const total = selectedFiles.length;
+    const statuses: ('pending' | 'uploading' | 'done' | 'failed')[] = new Array(total).fill('pending');
+    setUploadProgress({ current: 0, total, statuses });
+
     let successCount = 0;
     let failCount = 0;
 
     try {
-      for (const file of selectedFiles) {
+      for (let i = 0; i < selectedFiles.length; i++) {
+        const file = selectedFiles[i];
+        
+        // Update status to uploading
+        statuses[i] = 'uploading';
+        setUploadProgress({ current: i + 1, total, statuses: [...statuses] });
+
         const isVideo = file.type.startsWith('video/');
         const fileExt = file.name.split('.').pop();
         const fileName = `${user.id}/${selectedBaby.id}/${Date.now()}-${Math.random().toString(36).substr(2, 9)}.${fileExt}`;
@@ -131,6 +142,8 @@ export default function Gallery() {
 
         if (uploadError) {
           console.error('Upload error:', uploadError);
+          statuses[i] = 'failed';
+          setUploadProgress({ current: i + 1, total, statuses: [...statuses] });
           failCount++;
           continue;
         }
@@ -146,10 +159,14 @@ export default function Gallery() {
 
         if (dbError) {
           console.error('DB error:', dbError);
+          statuses[i] = 'failed';
+          setUploadProgress({ current: i + 1, total, statuses: [...statuses] });
           failCount++;
           continue;
         }
 
+        statuses[i] = 'done';
+        setUploadProgress({ current: i + 1, total, statuses: [...statuses] });
         successCount++;
       }
 
@@ -164,6 +181,7 @@ export default function Gallery() {
       setSelectedFiles([]);
       setPreviewUrls([]);
       setCaption('');
+      setUploadProgress({ current: 0, total: 0, statuses: [] });
       fetchMedia();
     } catch (error: any) {
       console.error('Upload error:', error);
@@ -319,7 +337,59 @@ export default function Gallery() {
               className="hidden"
             />
 
-            {previewUrls.length > 0 ? (
+            {/* Upload Progress */}
+            {uploading && uploadProgress.total > 0 && (
+              <div className="space-y-3">
+                <div className="flex items-center justify-between text-sm">
+                  <span className="font-medium">Uploading...</span>
+                  <span className="text-muted-foreground">{uploadProgress.current} of {uploadProgress.total}</span>
+                </div>
+                {/* Overall progress bar */}
+                <div className="h-2 bg-muted rounded-full overflow-hidden">
+                  <div 
+                    className="h-full bg-coral transition-all duration-300"
+                    style={{ width: `${(uploadProgress.statuses.filter(s => s === 'done' || s === 'failed').length / uploadProgress.total) * 100}%` }}
+                  />
+                </div>
+                {/* Individual file statuses */}
+                <div className="grid grid-cols-3 gap-2 max-h-48 overflow-y-auto">
+                  {previewUrls.map((url, index) => {
+                    const file = selectedFiles[index];
+                    const isVideo = file?.type.startsWith('video/');
+                    const status = uploadProgress.statuses[index];
+                    return (
+                      <div key={index} className="relative aspect-square">
+                        {isVideo ? (
+                          <video
+                            src={url}
+                            className={`w-full h-full object-cover rounded-lg ${status === 'done' ? 'opacity-50' : ''}`}
+                            muted
+                          />
+                        ) : (
+                          <img
+                            src={url}
+                            alt="Preview"
+                            className={`w-full h-full object-cover rounded-lg ${status === 'done' ? 'opacity-50' : ''}`}
+                          />
+                        )}
+                        {/* Status overlay */}
+                        <div className={`absolute inset-0 flex items-center justify-center rounded-lg ${
+                          status === 'uploading' ? 'bg-black/40' : 
+                          status === 'done' ? 'bg-green-500/40' : 
+                          status === 'failed' ? 'bg-red-500/40' : ''
+                        }`}>
+                          {status === 'uploading' && <Loader2 className="w-6 h-6 text-white animate-spin" />}
+                          {status === 'done' && <Check className="w-6 h-6 text-white" />}
+                          {status === 'failed' && <AlertCircle className="w-6 h-6 text-white" />}
+                        </div>
+                      </div>
+                    );
+                  })}
+                </div>
+              </div>
+            )}
+
+            {previewUrls.length > 0 && !uploading ? (
               <div className="space-y-3">
                 <div className="grid grid-cols-3 gap-2 max-h-48 overflow-y-auto">
                   {previewUrls.map((url, index) => {
@@ -366,7 +436,7 @@ export default function Gallery() {
                   Add more
                 </button>
               </div>
-            ) : (
+            ) : !uploading && (
               <div className="space-y-3">
                 {/* Camera capture options */}
                 <div className="grid grid-cols-2 gap-3">
